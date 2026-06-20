@@ -5,45 +5,47 @@
     <h1>支付配置</h1>
 </div>
 
+<form method="post" id="payConfigForm">
+
 <div class="config-card" style="margin-bottom:24px;">
     <h3>💰 年度会员价格</h3>
     <p class="config-tip">设置年度会员的售价，用户购买后全站视频免费看。</p>
-    <form method="post">
-        <div class="form-group">
-            <label>年度会员价格（元）</label>
-            <input type="number" name="membership_price" value="{{ membership_price }}" step="0.01" min="0.01" style="font-size:24px;font-weight:700;width:200px;border-color:var(--admin-primary);">
-        </div>
-        <button type="submit" class="btn btn-primary btn-lg">💾 保存价格</button>
-    </form>
+    <div class="form-group">
+        <label>年度会员价格（元）</label>
+        <input type="number" name="membership_price" value="{{ membership_price }}" step="0.01" min="0.01" style="font-size:28px;font-weight:700;width:200px;border-color:var(--admin-primary);">
+    </div>
 </div>
 
-<div class="config-card">
-    <h3>四方支付（聚合支付）配置</h3>
+<div class="config-card" style="margin-bottom:24px;">
+    <h3>💳 四方支付（聚合支付）配置</h3>
     <p class="config-tip">请填入你对接的四方支付平台信息。如果还没有四方支付渠道，可以先留空，系统会进入演示模式。</p>
 
-    <form method="post">
-        <div class="form-group">
-            <label>支付网关地址（API URL）</label>
-            <input type="text" name="api_url" value="{{ config.api_url }}" placeholder="https://api.example.com/gateway/pay">
-        </div>
-        <div class="form-group">
-            <label>商户ID（App ID）</label>
-            <input type="text" name="app_id" value="{{ config.app_id }}" placeholder="your_app_id">
-        </div>
-        <div class="form-group">
-            <label>商户密钥（App Secret）</label>
-            <input type="text" name="app_secret" value="{{ config.app_secret }}" placeholder="your_app_secret">
-        </div>
-        <div class="form-group">
-            <label>异步通知地址（Notify URL）</label>
-            <input type="text" name="notify_url" value="{{ config.notify_url }}" placeholder="https://你的域名.com/pay/notify">
-        </div>
-        <div class="form-group">
-            <label>支付成功跳转地址（Return URL）</label>
-            <input type="text" name="return_url" value="{{ config.return_url }}" placeholder="https://你的域名.com/pay/success">
-        </div>
-        <button type="submit" class="btn btn-primary">保存支付配置</button>
-    </form>
+    <div class="form-group">
+        <label>支付网关地址（API URL）</label>
+        <input type="text" name="api_url" value="{{ config.api_url }}" placeholder="https://api.example.com/gateway/pay">
+    </div>
+    <div class="form-group">
+        <label>商户ID（App ID）</label>
+        <input type="text" name="app_id" value="{{ config.app_id }}" placeholder="your_app_id">
+    </div>
+    <div class="form-group">
+        <label>商户密钥（App Secret）</label>
+        <input type="text" name="app_secret" value="{{ config.app_secret }}" placeholder="your_app_secret">
+    </div>
+    <div class="form-group">
+        <label>异步通知地址（Notify URL）</label>
+        <input type="text" name="notify_url" value="{{ config.notify_url }}" placeholder="https://你的域名.com/pay/notify">
+    </div>
+    <div class="form-group">
+        <label>支付成功跳转地址（Return URL）</label>
+        <input type="text" name="return_url" value="{{ config.return_url }}" placeholder="https://你的域名.com/pay/success">
+    </div>
 </div>
+
+<div class="form-actions">
+    <button type="submit" class="btn btn-primary btn-lg">💾 保存全部配置</button>
+</div>
+
+</form>
 
 {% endblock %}

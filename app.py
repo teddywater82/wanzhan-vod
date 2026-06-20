@@ -766,27 +766,35 @@ def admin_pay_config():
     if request.method == 'POST':
         conn = get_db()
         try:
-            # 四方支付配置
-            config = {
-                "api_url": request.form.get('api_url', ''),
-                "app_id": request.form.get('app_id', ''),
-                "app_secret": request.form.get('app_secret', ''),
-                "notify_url": request.form.get('notify_url', ''),
-                "return_url": request.form.get('return_url', '')
-            }
-            existing = conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone()
-            if existing:
-                conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
-            else:
-                conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
-
-            # 年度会员价格（复用同一连接，避免锁冲突）
+            # 年度会员价格
             membership_price = request.form.get('membership_price', '29.9')
             row = conn.execute("SELECT id FROM system_settings WHERE key='membership_price'").fetchone()
             if row:
                 conn.execute("UPDATE system_settings SET value=? WHERE key='membership_price'", (str(membership_price),))
             else:
                 conn.execute("INSERT INTO system_settings (key, value) VALUES ('membership_price', ?)", (str(membership_price),))
+
+            # 四方支付配置（只用非空字段覆盖）
+            api_url = request.form.get('api_url', '').strip()
+            app_id = request.form.get('app_id', '').strip()
+            app_secret = request.form.get('app_secret', '').strip()
+            notify_url = request.form.get('notify_url', '').strip()
+            return_url = request.form.get('return_url', '').strip()
+
+            if api_url or conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone() is None:
+                # 有新的API URL或者还没有配置 → 写入/更新
+                config = {
+                    "api_url": api_url,
+                    "app_id": app_id,
+                    "app_secret": app_secret,
+                    "notify_url": notify_url,
+                    "return_url": return_url
+                }
+                existing = conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone()
+                if existing:
+                    conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
+                else:
+                    conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
 
             conn.commit()
         except Exception as e:
