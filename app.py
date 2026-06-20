@@ -46,9 +46,10 @@ os.makedirs(os.path.join(BASE_DIR, 'static', 'uploads'), exist_ok=True)
 # 数据库初始化
 # ============================================================
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -135,14 +136,19 @@ def get_setting(key, default=''):
 
 
 def set_setting(key, value):
-    conn = get_db()
-    row = conn.execute("SELECT id FROM system_settings WHERE key=?", (key,)).fetchone()
-    if row:
-        conn.execute("UPDATE system_settings SET value=? WHERE key=?", (value, key))
-    else:
-        conn.execute("INSERT INTO system_settings (key, value) VALUES (?, ?)", (key, value))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT id FROM system_settings WHERE key=?", (key,)).fetchone()
+        if row:
+            conn.execute("UPDATE system_settings SET value=? WHERE key=?", (value, key))
+        else:
+            conn.execute("INSERT INTO system_settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        if 'conn' in dir() and conn:
+            conn.close()
+        raise e
 
 
 def get_membership_price():
@@ -752,27 +758,32 @@ def admin_pay_config():
         return redirect(url_for('admin_login_page'))
 
     if request.method == 'POST':
-        # 四方支付配置
-        config = {
-            "api_url": request.form.get('api_url', ''),
-            "app_id": request.form.get('app_id', ''),
-            "app_secret": request.form.get('app_secret', ''),
-            "notify_url": request.form.get('notify_url', ''),
-            "return_url": request.form.get('return_url', '')
-        }
-        conn = get_db()
-        existing = conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone()
-        if existing:
-            conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
-        else:
-            conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
+        try:
+            # 四方支付配置
+            config = {
+                "api_url": request.form.get('api_url', ''),
+                "app_id": request.form.get('app_id', ''),
+                "app_secret": request.form.get('app_secret', ''),
+                "notify_url": request.form.get('notify_url', ''),
+                "return_url": request.form.get('return_url', '')
+            }
+            conn = get_db()
+            existing = conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone()
+            if existing:
+                conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
+            else:
+                conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
 
-        # 年度会员价格
-        membership_price = request.form.get('membership_price', '29.9')
-        set_setting('membership_price', str(membership_price))
+            # 年度会员价格
+            membership_price = request.form.get('membership_price', '29.9')
+            set_setting('membership_price', str(membership_price))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            if 'conn' in dir() and conn:
+                conn.close()
+            raise e
         return redirect(url_for('admin_pay_config'))
 
     conn = get_db()
@@ -808,4 +819,4 @@ if __name__ == '__main__':
     print(f"[小白龙] 年度会员价格: ¥{price}")
     print(f"[小白龙] 管理后台: http://127.0.0.1:5000/admin")
     print(f"[小白龙] 管理员账号: admin / admin888")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
