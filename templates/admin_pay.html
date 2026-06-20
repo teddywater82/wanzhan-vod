@@ -1,0 +1,37 @@
+{% extends "admin_base.html" %}
+{% block admin_content %}
+
+<div class="admin-header">
+    <h1>支付配置</h1>
+</div>
+
+<div class="config-card">
+    <h3>四方支付（聚合支付）配置</h3>
+    <p class="config-tip">请填入你对接的四方支付平台信息。如果还没有四方支付渠道，可以先留空，系统会进入演示模式。</p>
+
+    <form method="post">
+        <div class="form-group">
+            <label>支付网关地址（API URL）</label>
+            <input type="text" name="api_url" value="{{ config.api_url }}" placeholder="https://api.example.com/gateway/pay">
+        </div>
+        <div class="form-group">
+            <label>商户ID（App ID）</label>
+            <input type="text" name="app_id" value="{{ config.app_id }}" placeholder="your_app_id">
+        </div>
+        <div class="form-group">
+            <label>商户密钥（App Secret）</label>
+            <input type="text" name="app_secret" value="{{ config.app_secret }}" placeholder="your_app_secret">
+        </div>
+        <div class="form-group">
+            <label>异步通知地址（Notify URL）</label>
+            <input type="text" name="notify_url" value="{{ config.notify_url }}" placeholder="https://你的域名.com/pay/notify">
+        </div>
+        <div class="form-group">
+            <label>支付成功跳转地址（Return URL）</label>
+            <input type="text" name="return_url" value="{{ config.return_url }}" placeholder="https://你的域名.com/pay/success">
+        </div>
+        <button type="submit" class="btn btn-primary">保存配置</button>
+    </form>
+</div>
+
+{% endblock %}

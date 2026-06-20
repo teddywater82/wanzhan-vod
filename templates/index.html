@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="hero">
+    <div class="hero-content">
+        <h1>海量视频，随心观看</h1>
+        <p>免费试看15秒 · 开通会员畅享全部</p>
+        {% if not user or not user.is_vip %}
+            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">立即注册</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="video-grid-section">
+    <h2>全部视频</h2>
+    {% if videos %}
+        <div class="video-grid">
+            {% for video in videos %}
+                <div class="video-card" onclick="location.href='{{ url_for('video_detail', video_id=video.id) }}'">
+                    <div class="video-card-thumb">
+                        {% if video.cover %}
+                            <img src="{{ url_for('static', filename='uploads/' + video.cover) }}" alt="{{ video.title }}">
+                        {% else %}
+                            <div class="video-card-placeholder">🎬</div>
+                        {% endif %}
+                        <span class="video-duration-badge">{{ video.duration }}秒</span>
+                    </div>
+                    <div class="video-card-info">
+                        <h3>{{ video.title }}</h3>
+                        <p class="video-card-desc">{{ video.description[:60] }}{% if video.description|length > 60 %}...{% endif %}</p>
+                        <div class="video-card-meta">
+                            <span class="video-category-tag">{{ video.category }}</span>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>暂无视频内容，敬请期待</p>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

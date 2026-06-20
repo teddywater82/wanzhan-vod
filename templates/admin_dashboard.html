@@ -1,0 +1,46 @@
+{% extends "admin_base.html" %}
+{% block admin_content %}
+
+<div class="admin-header">
+    <h1>系统概览</h1>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">🎬</div>
+        <div class="stat-info">
+            <div class="stat-number">{{ video_count }}</div>
+            <div class="stat-label">视频总数</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-info">
+            <div class="stat-number">{{ user_count }}</div>
+            <div class="stat-label">注册用户</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🌟</div>
+        <div class="stat-info">
+            <div class="stat-number">{{ vip_count }}</div>
+            <div class="stat-label">会员用户</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <div class="stat-info">
+            <div class="stat-number">{{ order_count }}</div>
+            <div class="stat-label">支付订单</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">💵</div>
+        <div class="stat-info">
+            <div class="stat-number">¥{{ "%.2f"|format(total_revenue) }}</div>
+            <div class="stat-label">总收入</div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

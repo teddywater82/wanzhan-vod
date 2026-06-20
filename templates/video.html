@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="video-player-page">
+    <div class="video-player-container">
+        <video id="videoPlayer" controls
+               data-video-id="{{ video.id }}"
+               data-trial="{{ trial }}"
+               data-is-vip="{{ 'true' if is_vip else 'false' }}">
+            <source src="{{ url_for('video_stream', video_id=video.id) }}" type="video/mp4">
+            您的浏览器不支持视频播放
+        </video>
+
+        <!-- 试看结束弹窗 -->
+        <div id="trialModal" class="modal-overlay" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-icon">🔒</div>
+                <h2>试看结束</h2>
+                <p>免费试看 {{ trial }} 秒已结束</p>
+                <p class="modal-desc">开通会员即可观看完整视频</p>
+
+                <div class="qrcode-section">
+                    <div class="qrcode-box">
+                        <div class="qrcode-placeholder" id="qrcodePlaceholder">
+                            <p>加载收款码...</p>
+                        </div>
+                        <p class="qrcode-tip">扫码支付 <strong>¥{{ price }}</strong></p>
+                    </div>
+                </div>
+
+                <div class="pay-type-selector">
+                    <button class="pay-type-btn active" data-type="alipay">💳 支付宝</button>
+                    <button class="pay-type-btn" data-type="wxpay">💚 微信</button>
+                    <button class="pay-type-btn" data-type="qqpay">🐧 QQ钱包</button>
+                </div>
+
+                <div class="modal-actions">
+                    <button id="btnPayNow" class="btn btn-primary" onclick="startPayment()">立即支付 ¥{{ price }}</button>
+                    <button class="btn btn-secondary" onclick="closeTrialModal()">返回首页</button>
+                </div>
+
+                <p class="modal-footer-text">
+                    已有会员？<a href="{{ url_for('login') }}">去登录</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-info-section">
+        <h1>{{ video.title }}</h1>
+        <div class="video-meta">
+            <span class="video-category-tag">{{ video.category }}</span>
+            <span>发布时间: {{ video.created_at[:10] }}</span>
+        </div>
+        <div class="video-description">
+            <p>{{ video.description }}</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const videoPlayer = document.getElementById('videoPlayer');
+const trialModal = document.getElementById('trialModal');
+const trialSeconds = {{ trial }};
+const isVip = {{ 'true' if is_vip else 'false' }};
+const videoId = {{ video.id }};
+let trialTimer = null;
+let currentPayType = 'alipay';
+let currentOrderNo = '';
+
+// 支付方式切换
+document.querySelectorAll('.pay-type-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.pay-type-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentPayType = this.dataset.type;
+    });
+});
+
+// 非VIP用户 - 试看计时
+if (!isVip) {
+    videoPlayer.addEventListener('timeupdate', function() {
+        if (this.currentTime >= trialSeconds && !trialTimer) {
+            this.pause();
+            trialTimer = setTimeout(() => {
+                showTrialModal();
+            }, 500);
+        }
+    });
+}
+
+function showTrialModal() {
+    trialModal.style.display = 'flex';
+    loadQrCode();
+}
+
+function closeTrialModal() {
+    trialModal.style.display = 'none';
+    window.location.href = '/';
+}
+
+function loadQrCode() {
+    const placeholder = document.getElementById('qrcodePlaceholder');
+    placeholder.innerHTML = '<p>扫码支付 <strong>¥{{ price }}</strong></p>';
+    placeholder.innerHTML += '<div style="width:200px;height:200px;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;margin:10px auto;font-size:14px;color:#999;">请使用支付工具扫码</div>';
+}
+
+function startPayment() {
+    const btn = document.getElementById('btnPayNow');
+    btn.disabled = true;
+    btn.textContent = '正在创建订单...';
+
+    fetch('/api/pay/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pay_type: currentPayType})
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.code === 0) {
+            currentOrderNo = res.data.order_no;
+            btn.textContent = '正在跳转支付...';
+
+            // POST提交到四方支付
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = res.data.pay_url;
+            form.style.display = 'none';
+            form.target = '_blank';
+
+            for (const [key, value] of Object.entries(res.data.pay_params)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = value;
+                form.appendChild(input);
+            }
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+
+            // 轮询支付状态
+            checkOrderStatus(currentOrderNo);
+        } else {
+            alert('创建订单失败: ' + res.msg);
+            btn.disabled = false;
+            btn.textContent = '立即支付 ¥{{ price }}';
+        }
+    })
+    .catch(err => {
+        alert('网络错误，请重试');
+        btn.disabled = false;
+        btn.textContent = '立即支付 ¥{{ price }}';
+    });
+}
+
+function checkOrderStatus(orderNo) {
+    const interval = setInterval(() => {
+        fetch('/api/pay/check/' + orderNo)
+            .then(r => r.json())
+            .then(res => {
+                if (res.code === 0 && res.data.status === 'paid') {
+                    clearInterval(interval);
+                    alert('支付成功！会员已开通！');
+                    location.reload();
+                }
+            })
+            .catch(() => {});
+    }, 3000);
+
+    // 5分钟后停止轮询
+    setTimeout(() => {
+        clearInterval(interval);
+    }, 300000);
+}
+</script>
+{% endblock %}

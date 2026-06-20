@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 小白龙视频</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+    <div class="admin-container">
+        <aside class="admin-sidebar">
+            <div class="admin-logo">🐉 小白龙管理</div>
+            <ul class="admin-nav">
+                <li><a href="{{ url_for('admin_dashboard') }}">📊 概览</a></li>
+                <li><a href="{{ url_for('admin_videos') }}">🎬 视频管理</a></li>
+                <li><a href="{{ url_for('admin_orders') }}">💰 订单管理</a></li>
+                <li><a href="{{ url_for('admin_pay_config') }}">🔧 支付配置</a></li>
+                <li><a href="{{ url_for('admin_logout') }}">🚪 退出</a></li>
+            </ul>
+        </aside>
+        <main class="admin-main">
+            {% block admin_content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

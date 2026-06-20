@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="member-page">
+    <div class="member-header">
+        <h1>会员中心</h1>
+        <p>欢迎回来，<strong>{{ user.username }}</strong></p>
+    </div>
+
+    <div class="member-status-card">
+        <div class="vip-status">
+            {% if user.is_vip %}
+                <div class="vip-badge vip-active">🌟 会员已激活</div>
+                <p>有效期至: {{ user.vip_expire[:10] if user.vip_expire else '永久' }}</p>
+            {% else %}
+                <div class="vip-badge vip-inactive">🔒 非会员</div>
+                <p>开通会员可观看全部视频</p>
+                <a href="#vip-section" class="btn btn-primary">立即开通 ¥{{ price }}</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not user.is_vip %}
+    <div id="vip-section" class="member-vip-section">
+        <h2>开通会员</h2>
+        <div class="vip-card">
+            <div class="vip-card-header">
+                <h3>年度会员</h3>
+                <div class="vip-price">¥{{ price }}</div>
+                <p>365天畅享全部视频</p>
+            </div>
+            <div class="vip-card-body">
+                <ul class="vip-benefits">
+                    <li>✅ 全部视频无限制观看</li>
+                    <li>✅ 跳过15秒试看</li>
+                    <li>✅ 持续更新</li>
+                </ul>
+                <div class="pay-type-selector">
+                    <button class="pay-type-btn active" data-type="alipay">💳 支付宝</button>
+                    <button class="pay-type-btn" data-type="wxpay">💚 微信</button>
+                    <button class="pay-type-btn" data-type="qqpay">🐧 QQ钱包</button>
+                </div>
+                <button id="btnBuyVip" class="btn btn-primary btn-block btn-lg" onclick="buyVip()">立即开通 ¥{{ price }}</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="member-orders">
+        <h2>我的订单</h2>
+        {% if orders %}
+            <table class="order-table">
+                <thead>
+                    <tr>
+                        <th>订单号</th>
+                        <th>金额</th>
+                        <th>状态</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>{{ order.order_no }}</td>
+                        <td>¥{{ order.amount }}</td>
+                        <td>
+                            {% if order.status == 'paid' %}
+                                <span class="status-paid">✅ 已支付</span>
+                            {% elif order.status == 'pending' %}
+                                <span class="status-pending">⏳ 待支付</span>
+                            {% else %}
+                                <span class="status-failed">❌ {{ order.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ order.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="empty-text">暂无订单记录</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let vipPayType = 'alipay';
+
+document.querySelectorAll('.pay-type-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.pay-type-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        vipPayType = this.dataset.type;
+    });
+});
+
+function buyVip() {
+    const btn = document.getElementById('btnBuyVip');
+    btn.disabled = true;
+    btn.textContent = '正在创建订单...';
+
+    fetch('/api/pay/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pay_type: vipPayType})
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.code === 0) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = res.data.pay_url;
+            form.style.display = 'none';
+            form.target = '_blank';
+            for (const [key, value] of Object.entries(res.data.pay_params)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = value;
+                form.appendChild(input);
+            }
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+            checkOrderStatus(res.data.order_no);
+        } else {
+            alert('创建订单失败');
+            btn.disabled = false;
+            btn.textContent = '立即开通 ¥{{ price }}';
+        }
+    })
+    .catch(() => {
+        alert('网络错误');
+        btn.disabled = false;
+        btn.textContent = '立即开通 ¥{{ price }}';
+    });
+}
+
+function checkOrderStatus(orderNo) {
+    const interval = setInterval(() => {
+        fetch('/api/pay/check/' + orderNo)
+            .then(r => r.json())
+            .then(res => {
+                if (res.code === 0 && res.data.status === 'paid') {
+                    clearInterval(interval);
+                    alert('支付成功！会员已开通！');
+                    location.reload();
+                }
+            })
+            .catch(() => {});
+    }, 3000);
+    setTimeout(() => clearInterval(interval), 300000);
+}
+</script>
+
+{% endblock %}
