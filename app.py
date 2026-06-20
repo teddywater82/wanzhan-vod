@@ -135,19 +135,25 @@ def get_setting(key, default=''):
     return row['value'] if row else default
 
 
-def set_setting(key, value):
+def set_setting(key, value, conn=None):
+    """设置系统配置。可传入已有连接，也可自建连接。"""
+    own_conn = False
     try:
-        conn = get_db()
+        if conn is None:
+            conn = get_db()
+            own_conn = True
         row = conn.execute("SELECT id FROM system_settings WHERE key=?", (key,)).fetchone()
         if row:
             conn.execute("UPDATE system_settings SET value=? WHERE key=?", (value, key))
         else:
             conn.execute("INSERT INTO system_settings (key, value) VALUES (?, ?)", (key, value))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        if 'conn' in dir() and conn:
+        if own_conn:
+            conn.commit()
             conn.close()
+    except Exception as e:
+        if own_conn and conn:
+            try: conn.close()
+            except: pass
         raise e
 
 
@@ -758,6 +764,7 @@ def admin_pay_config():
         return redirect(url_for('admin_login_page'))
 
     if request.method == 'POST':
+        conn = get_db()
         try:
             # 四方支付配置
             config = {
@@ -767,23 +774,26 @@ def admin_pay_config():
                 "notify_url": request.form.get('notify_url', ''),
                 "return_url": request.form.get('return_url', '')
             }
-            conn = get_db()
             existing = conn.execute("SELECT id FROM pay_config WHERE name='fourth_pay'").fetchone()
             if existing:
                 conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
             else:
                 conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
 
-            # 年度会员价格
+            # 年度会员价格（复用同一连接，避免锁冲突）
             membership_price = request.form.get('membership_price', '29.9')
-            set_setting('membership_price', str(membership_price))
+            row = conn.execute("SELECT id FROM system_settings WHERE key='membership_price'").fetchone()
+            if row:
+                conn.execute("UPDATE system_settings SET value=? WHERE key='membership_price'", (str(membership_price),))
+            else:
+                conn.execute("INSERT INTO system_settings (key, value) VALUES ('membership_price', ?)", (str(membership_price),))
 
             conn.commit()
-            conn.close()
         except Exception as e:
-            if 'conn' in dir() and conn:
-                conn.close()
+            conn.rollback()
             raise e
+        finally:
+            conn.close()
         return redirect(url_for('admin_pay_config'))
 
     conn = get_db()
