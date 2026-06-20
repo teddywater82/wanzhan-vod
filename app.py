@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, jsonify, send_from_directory, abort, Response,
-                   make_response)
+                   make_response, flash)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # ============================================================
@@ -691,6 +691,7 @@ def admin_video_add():
     conn.commit()
     conn.close()
 
+    flash('🎬 视频添加成功！', 'success')
     return redirect(url_for('admin_videos'))
 
 
@@ -715,6 +716,7 @@ def admin_video_edit(video_id):
         )
         conn.commit()
         conn.close()
+        flash('✅ 视频修改已保存', 'success')
         return redirect(url_for('admin_videos'))
 
     conn = get_db()
@@ -797,9 +799,10 @@ def admin_pay_config():
                     conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
 
             conn.commit()
+            flash('✅ 配置保存成功！', 'success')
         except Exception as e:
             conn.rollback()
-            raise e
+            flash(f'❌ 保存失败：{str(e)}', 'error')
         finally:
             conn.close()
         return redirect(url_for('admin_pay_config'))
