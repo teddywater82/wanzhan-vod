@@ -132,8 +132,8 @@
 const videoPlayer = document.getElementById('videoPlayer');
 const trialModal = document.getElementById('trialModal');
 const trialSeconds = {{ trial }};
-const isVip = {{ 'true' if is_vip else 'false' }};
-const hasTrial = {{ 'true' if has_trial else 'false' }};
+const isVip = {{ 'true' if is_vip else 'false' }} === 'true';
+const hasTrial = {{ 'true' if has_trial else 'false' }} === 'true';
 const videoId = {{ video.id }};
 const singlePrice = {{ single_price }};
 const vipPrice = {{ price }};
@@ -174,6 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // 非VIP用户 - 试看计时（兼容手机端全屏播放器覆盖问题）
 if (!isVip && hasTrial) {
     videoPlayer.addEventListener('timeupdate', function() {
+        // 先判断currentTime是否真的在播放（避免初始化时误判）
         if (this.currentTime >= trialSeconds && !trialTimer) {
             trialTimer = true;
             this.pause();
@@ -186,19 +187,6 @@ if (!isVip && hasTrial) {
             // 把视频容器背景去掉
             document.querySelector('.video-player-container').style.background = 'transparent';
             // 立即弹窗
-            showTrialModal();
-        }
-    });
-}
-
-// 手机端点击视频暂停时，如果试看结束也弹窗
-if (!isVip && hasTrial) {
-    videoPlayer.addEventListener('pause', function() {
-        if (trialTimer) return;
-        if (this.currentTime >= trialSeconds) {
-            trialTimer = true;
-            this.style.display = 'none';
-            document.querySelector('.video-player-container').style.background = 'transparent';
             showTrialModal();
         }
     });
