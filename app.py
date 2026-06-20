@@ -26,7 +26,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # 配置
 # ============================================================
 app = Flask(__name__)
-app.secret_key = os.urandom(24).hex()
+# 固定secret_key，防止重启后session失效
+app.secret_key = 'xiaobailong-vod-2024-secret-key-keep'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'data', 'site.db')
@@ -125,6 +126,20 @@ def init_db():
             value TEXT NOT NULL
         )
     """)
+
+    # 初始化默认管理员（如果不存在）
+    admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()
+    if not admin:
+        conn.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            ('admin', generate_password_hash('admin888'))
+        )
+
+    # 初始化默认会员价格
+    price_row = conn.execute("SELECT id FROM system_settings WHERE key='membership_price'").fetchone()
+    if not price_row:
+        conn.execute("INSERT INTO system_settings (key, value) VALUES ('membership_price', '29.9')")
+
     conn.commit()
     conn.close()
 
