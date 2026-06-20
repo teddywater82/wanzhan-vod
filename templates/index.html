@@ -5,8 +5,12 @@
     <div class="hero-content">
         <h1>海量视频，随心观看</h1>
         <p>免费试看15秒 · 开通会员畅享全部</p>
-        {% if not user or not user.is_vip %}
+        {% if not user %}
             <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">立即注册</a>
+        {% elif not user.is_vip %}
+            <a href="{{ url_for('member_center') }}" class="btn btn-primary btn-lg">🌟 开通会员 ¥{{ price }}</a>
+        {% else %}
+            <div class="hero-vip-badge">🌟 尊贵会员，畅享全部视频</div>
         {% endif %}
     </div>
 </div>

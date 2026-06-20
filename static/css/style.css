@@ -484,6 +484,17 @@ main {
 .status-pending { color: #f59e0b; }
 .status-failed { color: var(--danger); }
 
+.hero-vip-badge {
+    display: inline-block;
+    background: rgba(34, 197, 94, .15);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, .3);
+    padding: 12px 28px;
+    border-radius: 30px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
 .empty-text { text-align: center; padding: 40px; color: var(--text-muted); }
 .empty-state { text-align: center; padding: 80px 20px; color: var(--text-muted); }
 
