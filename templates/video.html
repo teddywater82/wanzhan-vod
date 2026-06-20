@@ -180,8 +180,9 @@ if (!isVip && hasTrial) {
     });
 
     videoPlayer.addEventListener('timeupdate', function() {
-        // 双重保险：必须真正开始播放 + 时间达到阈值 + 未触发过弹窗
-        if (hasStartedPlaying && this.currentTime >= trialSeconds && !trialTimer) {
+        // 三重保险：必须真正开始播放 + currentTime>1（跳过加载） + 时间达到阈值
+        // 严格限制：只在14~16秒区间内触发，跳过加载时异常的大currentTime值
+        if (hasStartedPlaying && this.currentTime > 14 && this.currentTime < 16 && !trialTimer) {
             trialTimer = true;
             this.pause();
             // 退出网页全屏
