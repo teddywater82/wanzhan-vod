@@ -171,28 +171,34 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('.pay-option-card[onclick*="vip"]').classList.add('active');
 });
 
-// 非VIP用户 - 试看计时
+// 非VIP用户 - 试看计时（兼容手机端全屏播放器覆盖问题）
 if (!isVip && hasTrial) {
     videoPlayer.addEventListener('timeupdate', function() {
         if (this.currentTime >= trialSeconds && !trialTimer) {
             trialTimer = true;
             this.pause();
-            // 退出全屏（如果有），然后立刻弹窗
+            // 退出网页全屏
             if (document.fullscreenElement) {
                 document.exitFullscreen().catch(()=>{});
             }
-            // 立即弹窗，不延迟
+            // 关键：手机上视频会进入独立播放层，隐藏视频元素让网页弹窗可见
+            this.style.display = 'none';
+            // 把视频容器背景去掉
+            document.querySelector('.video-player-container').style.background = 'transparent';
+            // 立即弹窗
             showTrialModal();
         }
     });
 }
 
-// 手机端点击视频暂停时，如果试看结束也弹窗（兼容触摸事件）
+// 手机端点击视频暂停时，如果试看结束也弹窗
 if (!isVip && hasTrial) {
     videoPlayer.addEventListener('pause', function() {
         if (trialTimer) return;
         if (this.currentTime >= trialSeconds) {
             trialTimer = true;
+            this.style.display = 'none';
+            document.querySelector('.video-player-container').style.background = 'transparent';
             showTrialModal();
         }
     });
@@ -212,6 +218,9 @@ function showTrialModal() {
 
 function closeTrialModal() {
     trialModal.style.display = 'none';
+    // 恢复视频显示（用户回到首页或继续看）
+    videoPlayer.style.display = '';
+    document.querySelector('.video-player-container').style.background = '';
     window.location.href = '/';
 }
 
