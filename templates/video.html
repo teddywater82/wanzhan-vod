@@ -138,7 +138,6 @@ const videoId = {{ video.id }};
 const singlePrice = {{ single_price }};
 const vipPrice = {{ price }};
 let trialTimer = null;
-let hasStartedPlaying = false;  // 标记是否真正开始播放（防止手机端加载时误触发）
 let currentPayType = 'alipay';
 let currentOrderNo = '';
 let selectedOption = 'vip';  // 'vip' or 'single'
@@ -172,28 +171,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('.pay-option-card[onclick*="vip"]').classList.add('active');
 });
 
-// 非VIP用户 - 试看计时（兼容手机端全屏播放器覆盖问题）
+// 非VIP用户 - 试看计时
 if (!isVip && hasTrial) {
-    // 视频真正开始播放后才标记
-    videoPlayer.addEventListener('playing', function() {
-        hasStartedPlaying = true;
-    });
-
     videoPlayer.addEventListener('timeupdate', function() {
-        // 三重保险：必须真正开始播放 + currentTime>1（跳过加载） + 时间达到阈值
-        // 严格限制：只在14~16秒区间内触发，跳过加载时异常的大currentTime值
-        if (hasStartedPlaying && this.currentTime > 14 && this.currentTime < 16 && !trialTimer) {
+        if (this.currentTime >= trialSeconds && !trialTimer) {
             trialTimer = true;
             this.pause();
-            // 退出网页全屏
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(()=>{});
-            }
-            // 关键：手机上视频会进入独立播放层，隐藏视频元素让网页弹窗可见
-            this.style.display = 'none';
-            // 把视频容器背景去掉
-            document.querySelector('.video-player-container').style.background = 'transparent';
-            // 立即弹窗
             showTrialModal();
         }
     });
@@ -213,9 +196,6 @@ function showTrialModal() {
 
 function closeTrialModal() {
     trialModal.style.display = 'none';
-    // 恢复视频显示（用户回到首页或继续看）
-    videoPlayer.style.display = '';
-    document.querySelector('.video-player-container').style.background = '';
     window.location.href = '/';
 }
 
