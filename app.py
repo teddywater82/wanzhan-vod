@@ -94,8 +94,6 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_no TEXT UNIQUE NOT NULL,
             user_id INTEGER DEFAULT 0,
-            order_type TEXT DEFAULT 'vip',
-            video_id INTEGER DEFAULT 0,
             amount REAL NOT NULL,
             status TEXT DEFAULT 'pending',
             pay_type TEXT DEFAULT '',
@@ -104,6 +102,12 @@ def init_db():
             paid_at TEXT
         )
     """)
+    # 迁移：给旧表增加 order_type 和 video_id 列
+    try:
+        conn.execute("SELECT order_type FROM orders LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'vip'")
+        conn.execute("ALTER TABLE orders ADD COLUMN video_id INTEGER DEFAULT 0")
     # 支付配置表
     conn.execute("""
         CREATE TABLE IF NOT EXISTS pay_config (
