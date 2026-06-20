@@ -10,6 +10,7 @@
         <tr>
             <th>订单号</th>
             <th>用户</th>
+            <th>类型</th>
             <th>金额</th>
             <th>支付方式</th>
             <th>状态</th>
@@ -23,6 +24,15 @@
         <tr>
             <td>{{ order.order_no }}</td>
             <td>{{ order.username or '游客' }}</td>
+            <td>
+                {% if order.order_type == 'vip' %}
+                    <span class="type-vip">🌟 年度会员</span>
+                {% elif order.order_type == 'single' %}
+                    <span class="type-single">🎬 单集购买</span>
+                {% else %}
+                    {{ order.order_type }}
+                {% endif %}
+            </td>
             <td>¥{{ order.amount }}</td>
             <td>{{ order.pay_type }}</td>
             <td>
@@ -41,5 +51,10 @@
         {% endfor %}
     </tbody>
 </table>
+
+<style>
+.type-vip { color: #22c55e; font-weight: 600; font-size: 13px; }
+.type-single { color: #6366f1; font-weight: 600; font-size: 13px; }
+</style>
 
 {% endblock %}

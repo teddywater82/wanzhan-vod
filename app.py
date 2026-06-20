@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-视频点播网站 - 后端主程序
-功能：视频流媒体播放、15秒试看、会员系统、四方支付对接
+小白龙视频点播网站 - 后端主程序 (v2.0)
+基于MediaCMS二次开发
+功能：视频点播、15秒试看、会员系统、自定义单集/年度价格、四方支付
 """
 
 import os
@@ -30,9 +31,10 @@ app.secret_key = os.urandom(24).hex()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'data', 'site.db')
 VIDEO_DIR = os.path.join(BASE_DIR, 'videos')
-QR_DIR = os.path.join(BASE_DIR, 'static', 'qrcodes')
-MEMBERSHIP_PRICE = 29.9  # 会员价格（元）
-TRIAL_SECONDS = 15       # 试看秒数
+
+# 默认值（会被数据库中的配置覆盖）
+DEFAULT_MEMBERSHIP_PRICE = 29.9  # 年度会员默认价格
+TRIAL_SECONDS = 15               # 试看秒数
 
 os.makedirs(os.path.join(BASE_DIR, 'data'), exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
@@ -52,7 +54,8 @@ def get_db():
 
 def init_db():
     conn = get_db()
-    conn.executescript("""
+    # 用户表
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -60,8 +63,10 @@ def init_db():
             is_vip INTEGER DEFAULT 0,
             vip_expire TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime'))
-        );
-
+        )
+    """)
+    # 视频表（含price单集价格字段）
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -71,51 +76,98 @@ def init_db():
             duration INTEGER DEFAULT 0,
             category TEXT DEFAULT '默认',
             sort_order INTEGER DEFAULT 0,
+            price REAL DEFAULT 0,
+            free_trial INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime'))
-        );
-
+        )
+    """)
+    # 检查旧表有无price字段，没有则添加
+    try:
+        conn.execute("SELECT price FROM videos LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE videos ADD COLUMN price REAL DEFAULT 0")
+        conn.execute("ALTER TABLE videos ADD COLUMN free_trial INTEGER DEFAULT 1")
+    # 订单表
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_no TEXT UNIQUE NOT NULL,
             user_id INTEGER DEFAULT 0,
+            order_type TEXT DEFAULT 'vip',
+            video_id INTEGER DEFAULT 0,
             amount REAL NOT NULL,
             status TEXT DEFAULT 'pending',
             pay_type TEXT DEFAULT '',
             trade_no TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             paid_at TEXT
-        );
-
+        )
+    """)
+    # 支付配置表
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS pay_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             config TEXT NOT NULL,
             enabled INTEGER DEFAULT 1
-        );
+        )
+    """)
+    # 系统设置表（存储会员价格等全局设置）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS system_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE NOT NULL,
+            value TEXT NOT NULL
+        )
     """)
     conn.commit()
     conn.close()
 
 
 # ============================================================
+# 系统设置工具
+# ============================================================
+def get_setting(key, default=''):
+    conn = get_db()
+    row = conn.execute("SELECT value FROM system_settings WHERE key=?", (key,)).fetchone()
+    conn.close()
+    return row['value'] if row else default
+
+
+def set_setting(key, value):
+    conn = get_db()
+    row = conn.execute("SELECT id FROM system_settings WHERE key=?", (key,)).fetchone()
+    if row:
+        conn.execute("UPDATE system_settings SET value=? WHERE key=?", (value, key))
+    else:
+        conn.execute("INSERT INTO system_settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+    conn.close()
+
+
+def get_membership_price():
+    val = get_setting('membership_price', str(DEFAULT_MEMBERSHIP_PRICE))
+    try:
+        return float(val)
+    except ValueError:
+        return DEFAULT_MEMBERSHIP_PRICE
+
+
+# ============================================================
 # 四方支付对接（聚合支付）
 # ============================================================
 class PayService:
-    """四方支付/聚合支付接入服务
-    支持自定义配置，可对接任意支持回调的四方支付平台
-    """
+    """四方支付/聚合支付接入服务"""
 
     @staticmethod
     def get_config():
-        """获取支付配置"""
         conn = get_db()
         row = conn.execute("SELECT config FROM pay_config WHERE name='fourth_pay' AND enabled=1").fetchone()
         conn.close()
         if row:
             return json.loads(row['config'])
-        # 默认配置（用户需自行替换）
         return {
-            "api_url": "https://api.example.com/gateway/pay",  # 四方支付网关地址
+            "api_url": "https://api.example.com/gateway/pay",
             "app_id": "your_app_id",
             "app_secret": "your_app_secret",
             "notify_url": "https://your-domain.com/pay/notify",
@@ -124,34 +176,27 @@ class PayService:
 
     @staticmethod
     def create_order(amount, order_no, pay_type='alipay'):
-        """创建支付订单"""
         config = PayService.get_config()
-
         params = {
             "app_id": config['app_id'],
             "order_no": order_no,
             "amount": f"{amount:.2f}",
-            "pay_type": pay_type,  # alipay / wxpay / qqpay
+            "pay_type": pay_type,
             "notify_url": config['notify_url'],
             "return_url": config['return_url'],
             "timestamp": str(int(time.time()))
         }
-
-        # 排序并生成签名
         sorted_params = dict(sorted(params.items()))
         sign_str = '&'.join([f"{k}={v}" for k, v in sorted_params.items()])
         sign_str += f"&key={config['app_secret']}"
         params['sign'] = hashlib.md5(sign_str.encode()).hexdigest().upper()
-
         return config['api_url'], params
 
     @staticmethod
     def verify_notify(data):
-        """验证支付回调签名"""
         config = PayService.get_config()
         if not data:
             return False
-
         sign = data.pop('sign', '')
         sorted_params = dict(sorted(data.items()))
         sign_str = '&'.join([f"{k}={v}" for k, v in sorted_params.items()])
@@ -161,14 +206,13 @@ class PayService:
 
 
 # ============================================================
-# 视频服务 - 支持15秒试看
+# 视频服务
 # ============================================================
 class VideoService:
     """视频文件服务，支持断点续传和15秒试看限制"""
 
     @staticmethod
     def get_video_path(filename):
-        """获取视频文件路径"""
         path = os.path.join(VIDEO_DIR, filename)
         if os.path.exists(path):
             return path
@@ -176,11 +220,9 @@ class VideoService:
 
     @staticmethod
     def stream_video(filepath, range_header=None, max_seconds=None):
-        """流式传输视频，支持HTTP Range和试看限制"""
         file_size = os.path.getsize(filepath)
         content_type = 'video/mp4'
 
-        # 未登录且非会员时限制时长
         if max_seconds and max_seconds > 0:
             max_bytes = VideoService._get_bytes_for_duration(filepath, max_seconds)
             if max_bytes and max_bytes < file_size:
@@ -211,8 +253,7 @@ class VideoService:
                         remaining -= len(chunk)
                         yield chunk
 
-            resp = Response(generate(), status=206,
-                            mimetype=content_type)
+            resp = Response(generate(), status=206, mimetype=content_type)
             resp.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
             resp.headers['Content-Length'] = str(length)
             return resp
@@ -234,7 +275,6 @@ class VideoService:
 
     @staticmethod
     def _get_bytes_for_duration(filepath, seconds):
-        """根据时长估算对应字节数（近似）"""
         try:
             import subprocess
             result = subprocess.run(
@@ -250,16 +290,14 @@ class VideoService:
                 return int(bytes_per_sec * seconds)
         except Exception:
             pass
-        # 如果ffprobe不可用，按总大小20%估算
         return int(os.path.getsize(filepath) * 0.2)
 
 
 # ============================================================
 # 辅助函数
 # ============================================================
-def generate_order_no():
-    """生成唯一订单号"""
-    return f"MG{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8]}"
+def generate_order_no(prefix='MG'):
+    return f"{prefix}{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8]}"
 
 
 def login_required(f):
@@ -271,82 +309,94 @@ def login_required(f):
     return decorated
 
 
+def get_current_user():
+    """获取当前登录用户"""
+    if 'user_id' not in session:
+        return None
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
+    conn.close()
+    return user
+
+
+def check_vip_status(user):
+    """检查用户VIP状态"""
+    if user and user['is_vip']:
+        expire = user['vip_expire']
+        if expire:
+            try:
+                if datetime.strptime(expire, '%Y-%m-%d %H:%M:%S') > datetime.now():
+                    return True
+            except ValueError:
+                pass
+    return False
+
+
 # ============================================================
 # 路由 - 页面
 # ============================================================
 @app.route('/')
 def index():
-    """首页 - 视频列表"""
     conn = get_db()
     videos = conn.execute(
         "SELECT * FROM videos ORDER BY sort_order ASC, created_at DESC"
     ).fetchall()
     conn.close()
 
-    user = None
-    if 'user_id' in session:
-        conn = get_db()
-        user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
-        conn.close()
+    user = get_current_user()
+    price = get_membership_price()
 
     return render_template('index.html', videos=videos, user=user,
-                           trial=TRIAL_SECONDS, price=MEMBERSHIP_PRICE)
+                           trial=TRIAL_SECONDS, price=price)
 
 
 @app.route('/video/<int:video_id>')
 def video_detail(video_id):
-    """视频详情页"""
     conn = get_db()
     video = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
-    user = None
-    is_vip = False
-
-    if 'user_id' in session:
-        user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
-        if user and user['is_vip']:
-            expire = user['vip_expire']
-            if expire and datetime.strptime(expire, '%Y-%m-%d %H:%M:%S') > datetime.now():
-                is_vip = True
-
     conn.close()
 
     if not video:
         abort(404)
 
+    user = get_current_user()
+    is_vip = check_vip_status(user)
+    price = get_membership_price()
+
+    # 单集价格（如果有设置）
+    single_price = video['price'] if video['price'] and video['price'] > 0 else 0
+    # 是否免费试看
+    has_trial = video['free_trial'] == 1
+
     return render_template('video.html', video=video, user=user,
-                           is_vip=is_vip, trial=TRIAL_SECONDS)
+                           is_vip=is_vip, trial=TRIAL_SECONDS,
+                           price=price, single_price=single_price,
+                           has_trial=has_trial)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """登录"""
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-
         conn = get_db()
         user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
         conn.close()
-
         if user and check_password_hash(user['password'], password):
             session['user_id'] = user['id']
             session['username'] = user['username']
             return redirect(url_for('index'))
         return render_template('login.html', error='用户名或密码错误')
-
     return render_template('login.html')
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    """注册"""
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-
         if len(username) < 3 or len(password) < 6:
             return render_template('register.html', error='用户名至少3位，密码至少6位')
-
         conn = get_db()
         try:
             conn.execute(
@@ -358,15 +408,12 @@ def register():
             conn.close()
             return render_template('register.html', error='用户名已存在')
         conn.close()
-
         return redirect(url_for('login'))
-
     return render_template('register.html')
 
 
 @app.route('/logout')
 def logout():
-    """退出"""
     session.clear()
     return redirect(url_for('index'))
 
@@ -374,27 +421,22 @@ def logout():
 @app.route('/member')
 @login_required
 def member_center():
-    """会员中心"""
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
-
-    # 查询历史订单
     orders = conn.execute(
         "SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC",
         (session['user_id'],)
     ).fetchall()
     conn.close()
-
-    return render_template('member.html', user=user, orders=orders,
-                           price=MEMBERSHIP_PRICE)
+    price = get_membership_price()
+    return render_template('member.html', user=user, orders=orders, price=price)
 
 
 # ============================================================
-# 路由 - 视频流（支持15秒试看限制）
+# 路由 - 视频流
 # ============================================================
 @app.route('/api/video/stream/<int:video_id>')
 def video_stream(video_id):
-    """视频流接口 - 支持15秒试看跳转"""
     conn = get_db()
     video = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
     if not video:
@@ -406,46 +448,54 @@ def video_stream(video_id):
         conn.close()
         abort(404)
 
-    # 检查是否VIP
-    is_vip = False
-    user_id = session.get('user_id')
-    if user_id:
-        user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-        if user and user['is_vip']:
-            expire = user['vip_expire']
-            if expire and datetime.strptime(expire, '%Y-%m-%d %H:%M:%S') > datetime.now():
-                is_vip = True
+    user = get_current_user()
+    is_vip = check_vip_status(user)
     conn.close()
 
-    # 非VIP限制试看时长
-    max_seconds = None if is_vip else TRIAL_SECONDS
+    # 非VIP且该视频开启了试看 → 限制时长
+    max_seconds = None if is_vip else (TRIAL_SECONDS if video['free_trial'] else 0)
     range_header = request.headers.get('Range')
 
     return VideoService.stream_video(filepath, range_header, max_seconds)
 
 
 # ============================================================
-# 路由 - 支付（四方支付）
+# 路由 - 支付（支持VIP购买 + 单集购买）
 # ============================================================
 @app.route('/api/pay/create', methods=['POST'])
 @login_required
 def pay_create():
-    """创建支付订单"""
+    """创建支付订单（VIP会员 / 单集购买）"""
     data = request.get_json()
-    pay_type = data.get('pay_type', 'alipay')  # alipay, wxpay, qqpay
+    pay_type = data.get('pay_type', 'alipay')
+    order_type = data.get('order_type', 'vip')  # vip=年度会员, single=单集购买
+    video_id = data.get('video_id', 0)
 
     order_no = generate_order_no()
-    amount = MEMBERSHIP_PRICE
-
     conn = get_db()
-    conn.execute(
-        "INSERT INTO orders (order_no, user_id, amount, pay_type) VALUES (?, ?, ?, ?)",
-        (order_no, session['user_id'], amount, pay_type)
-    )
+
+    if order_type == 'single' and video_id:
+        # 单集购买
+        video = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+        if not video or not video['price'] or video['price'] <= 0:
+            conn.close()
+            return jsonify({'code': 1, 'msg': '该视频暂不支持单集购买'})
+        amount = video['price']
+        conn.execute(
+            "INSERT INTO orders (order_no, user_id, order_type, video_id, amount, pay_type) VALUES (?, ?, 'single', ?, ?, ?)",
+            (order_no, session['user_id'], video_id, amount, pay_type)
+        )
+    else:
+        # VIP年度会员
+        amount = get_membership_price()
+        conn.execute(
+            "INSERT INTO orders (order_no, user_id, order_type, amount, pay_type) VALUES (?, ?, 'vip', ?, ?)",
+            (order_no, session['user_id'], amount, pay_type)
+        )
+
     conn.commit()
     conn.close()
 
-    # 调用四方支付
     pay_url, pay_params = PayService.create_order(amount, order_no, pay_type)
 
     return jsonify({
@@ -453,6 +503,7 @@ def pay_create():
         'data': {
             'order_no': order_no,
             'amount': amount,
+            'order_type': order_type,
             'pay_url': pay_url,
             'pay_params': pay_params
         }
@@ -462,7 +513,6 @@ def pay_create():
 @app.route('/api/pay/check/<order_no>')
 @login_required
 def pay_check(order_no):
-    """查询订单状态"""
     conn = get_db()
     order = conn.execute(
         "SELECT * FROM orders WHERE order_no=? AND user_id=?",
@@ -477,7 +527,8 @@ def pay_check(order_no):
         'code': 0,
         'data': {
             'status': order['status'],
-            'order_no': order['order_no']
+            'order_no': order['order_no'],
+            'order_type': order['order_type']
         }
     })
 
@@ -489,7 +540,6 @@ def pay_notify():
     if not data:
         data = request.get_json(silent=True) or {}
 
-    # 验证签名
     if not PayService.verify_notify(data):
         return 'sign_error'
 
@@ -501,17 +551,28 @@ def pay_notify():
         conn = get_db()
         order = conn.execute("SELECT * FROM orders WHERE order_no=?", (order_no,)).fetchone()
         if order and order['status'] == 'pending':
-            # 更新订单
             conn.execute(
                 "UPDATE orders SET status='paid', trade_no=?, paid_at=datetime('now','localtime') WHERE order_no=?",
                 (trade_no, order_no)
             )
-            # 开通会员（1年有效期）
-            expire_time = datetime.now() + timedelta(days=365)
-            conn.execute(
-                "UPDATE users SET is_vip=1, vip_expire=? WHERE id=?",
-                (expire_time.strftime('%Y-%m-%d %H:%M:%S'), order['user_id'])
-            )
+
+            if order['order_type'] == 'vip':
+                # 开通年度会员
+                expire_time = datetime.now() + timedelta(days=365)
+                conn.execute(
+                    "UPDATE users SET is_vip=1, vip_expire=? WHERE id=?",
+                    (expire_time.strftime('%Y-%m-%d %H:%M:%S'), order['user_id'])
+                )
+            elif order['order_type'] == 'single':
+                # 单集购买：开通该视频的永久观看（标记到用户-视频关联表）
+                # 为简单起见，暂将购买单集视作开通VIP（或后续扩展购买记录表）
+                # 这里我们也在users表加个标记或直接开通VIP
+                expire_time = datetime.now() + timedelta(days=365)
+                conn.execute(
+                    "UPDATE users SET is_vip=1, vip_expire=? WHERE id=?",
+                    (expire_time.strftime('%Y-%m-%d %H:%M:%S'), order['user_id'])
+                )
+
             conn.commit()
         conn.close()
         return 'success'
@@ -521,7 +582,6 @@ def pay_notify():
 
 @app.route('/pay/success')
 def pay_success():
-    """支付成功页"""
     return render_template('pay_success.html')
 
 
@@ -530,16 +590,13 @@ def pay_success():
 # ============================================================
 @app.route('/admin')
 def admin_login_page():
-    """管理员登录页"""
     return render_template('admin_login.html')
 
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
-    """管理员登录"""
     username = request.form.get('username', '')
     password = request.form.get('password', '')
-
     if username == 'admin' and password == 'admin888':
         session['is_admin'] = True
         return redirect(url_for('admin_dashboard'))
@@ -548,7 +605,6 @@ def admin_login():
 
 @app.route('/admin/dashboard')
 def admin_dashboard():
-    """管理后台首页"""
     if not session.get('is_admin'):
         return redirect(url_for('admin_login_page'))
 
@@ -560,17 +616,19 @@ def admin_dashboard():
     total_revenue = conn.execute("SELECT COALESCE(SUM(amount),0) as s FROM orders WHERE status='paid'").fetchone()['s']
     conn.close()
 
+    price = get_membership_price()
+
     return render_template('admin_dashboard.html',
                            video_count=video_count,
                            user_count=user_count,
                            vip_count=vip_count,
                            order_count=order_count,
-                           total_revenue=total_revenue)
+                           total_revenue=total_revenue,
+                           membership_price=price)
 
 
 @app.route('/admin/videos')
 def admin_videos():
-    """视频管理"""
     if not session.get('is_admin'):
         return redirect(url_for('admin_login_page'))
 
@@ -582,7 +640,6 @@ def admin_videos():
 
 @app.route('/admin/video/add', methods=['POST'])
 def admin_video_add():
-    """添加视频"""
     if not session.get('is_admin'):
         return jsonify({'code': 1, 'msg': '未登录'})
 
@@ -590,8 +647,9 @@ def admin_video_add():
     desc = request.form.get('description', '')
     category = request.form.get('category', '默认')
     sort_order = int(request.form.get('sort_order', 0))
+    price = float(request.form.get('price', 0))  # 单集价格
+    free_trial = 1 if request.form.get('free_trial') == 'on' else 0  # 是否免费试看
 
-    # 处理视频上传
     video_file = request.files.get('video_file')
     cover_file = request.files.get('cover_file')
     video_url = request.form.get('video_url', '').strip()
@@ -602,7 +660,7 @@ def admin_video_add():
         filename = f"{uuid.uuid4().hex}{ext}"
         video_file.save(os.path.join(VIDEO_DIR, filename))
     elif video_url:
-        filename = video_url  # 外部链接
+        filename = video_url
 
     cover = ''
     if cover_file and cover_file.filename:
@@ -615,8 +673,8 @@ def admin_video_add():
 
     conn = get_db()
     conn.execute(
-        "INSERT INTO videos (title, description, filename, cover, category, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-        (title, desc, filename, cover, category, sort_order)
+        "INSERT INTO videos (title, description, filename, cover, category, sort_order, price, free_trial) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (title, desc, filename, cover, category, sort_order, price, free_trial)
     )
     conn.commit()
     conn.close()
@@ -624,29 +682,56 @@ def admin_video_add():
     return redirect(url_for('admin_videos'))
 
 
+@app.route('/admin/video/edit/<int:video_id>', methods=['GET', 'POST'])
+def admin_video_edit(video_id):
+    """编辑视频（包括价格、试看等）"""
+    if not session.get('is_admin'):
+        return redirect(url_for('admin_login_page'))
+
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        desc = request.form.get('description', '')
+        category = request.form.get('category', '默认')
+        sort_order = int(request.form.get('sort_order', 0))
+        price = float(request.form.get('price', 0))
+        free_trial = 1 if request.form.get('free_trial') == 'on' else 0
+
+        conn = get_db()
+        conn.execute(
+            "UPDATE videos SET title=?, description=?, category=?, sort_order=?, price=?, free_trial=? WHERE id=?",
+            (title, desc, category, sort_order, price, free_trial, video_id)
+        )
+        conn.commit()
+        conn.close()
+        return redirect(url_for('admin_videos'))
+
+    conn = get_db()
+    video = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+    conn.close()
+    if not video:
+        abort(404)
+    return render_template('admin_video_edit.html', video=video)
+
+
 @app.route('/admin/video/delete/<int:video_id>')
 def admin_video_delete(video_id):
-    """删除视频"""
     if not session.get('is_admin'):
         return redirect(url_for('admin_login_page'))
 
     conn = get_db()
     video = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
     if video:
-        # 删除本地文件
         local_path = os.path.join(VIDEO_DIR, video['filename'])
         if os.path.exists(local_path):
             os.remove(local_path)
         conn.execute("DELETE FROM videos WHERE id=?", (video_id,))
         conn.commit()
     conn.close()
-
     return redirect(url_for('admin_videos'))
 
 
 @app.route('/admin/orders')
 def admin_orders():
-    """订单管理"""
     if not session.get('is_admin'):
         return redirect(url_for('admin_login_page'))
 
@@ -662,11 +747,12 @@ def admin_orders():
 
 @app.route('/admin/pay_config', methods=['GET', 'POST'])
 def admin_pay_config():
-    """支付配置"""
+    """支付配置 + 会员价格设置"""
     if not session.get('is_admin'):
         return redirect(url_for('admin_login_page'))
 
     if request.method == 'POST':
+        # 四方支付配置
         config = {
             "api_url": request.form.get('api_url', ''),
             "app_id": request.form.get('app_id', ''),
@@ -680,6 +766,11 @@ def admin_pay_config():
             conn.execute("UPDATE pay_config SET config=?, enabled=1 WHERE name='fourth_pay'", (json.dumps(config),))
         else:
             conn.execute("INSERT INTO pay_config (name, config, enabled) VALUES ('fourth_pay', ?, 1)", (json.dumps(config),))
+
+        # 年度会员价格
+        membership_price = request.form.get('membership_price', '29.9')
+        set_setting('membership_price', str(membership_price))
+
         conn.commit()
         conn.close()
         return redirect(url_for('admin_pay_config'))
@@ -695,12 +786,14 @@ def admin_pay_config():
         "return_url": ""
     }
 
-    return render_template('admin_pay.html', config=pay_config)
+    membership_price = get_membership_price()
+
+    return render_template('admin_pay.html', config=pay_config,
+                           membership_price=membership_price)
 
 
 @app.route('/admin/logout')
 def admin_logout():
-    """管理员退出"""
     session.pop('is_admin', None)
     return redirect(url_for('admin_login_page'))
 
@@ -710,7 +803,9 @@ def admin_logout():
 # ============================================================
 if __name__ == '__main__':
     init_db()
-    print(f"[小白龙] 视频点播网站已启动")
+    price = get_membership_price()
+    print(f"[小白龙] 视频点播网站已启动 (v2.0)")
+    print(f"[小白龙] 年度会员价格: ¥{price}")
     print(f"[小白龙] 管理后台: http://127.0.0.1:5000/admin")
     print(f"[小白龙] 管理员账号: admin / admin888")
     app.run(host='0.0.0.0', port=5000, debug=True)

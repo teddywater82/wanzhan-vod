@@ -25,6 +25,23 @@
             <label>排序（越小越靠前）</label>
             <input type="number" name="sort_order" value="0">
         </div>
+        <div class="row">
+            <div class="col">
+                <div class="form-group">
+                    <label>单集点播价格（¥）</label>
+                    <input type="number" name="price" value="0" step="0.01" min="0">
+                    <span class="form-tip">0表示不单独出售，需买会员</span>
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="free_trial" checked>
+                        允许免费试看15秒
+                    </label>
+                </div>
+            </div>
+        </div>
         <div class="form-group">
             <label>上传视频文件</label>
             <input type="file" name="video_file" accept="video/mp4,video/avi,video/mov">
@@ -48,6 +65,8 @@
             <th>ID</th>
             <th>标题</th>
             <th>分类</th>
+            <th>价格</th>
+            <th>试看</th>
             <th>排序</th>
             <th>添加时间</th>
             <th>操作</th>
@@ -59,9 +78,24 @@
             <td>{{ video.id }}</td>
             <td>{{ video.title }}</td>
             <td>{{ video.category }}</td>
+            <td>
+                {% if video.price and video.price > 0 %}
+                    ¥{{ "%.2f"|format(video.price) }}
+                {% else %}
+                    <span class="text-muted">会员免费</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if video.free_trial %}
+                    <span class="status-paid">✅ 15秒</span>
+                {% else %}
+                    <span class="status-failed">❌ 关闭</span>
+                {% endif %}
+            </td>
             <td>{{ video.sort_order }}</td>
             <td>{{ video.created_at[:16] }}</td>
             <td>
+                <a href="{{ url_for('admin_video_edit', video_id=video.id) }}" class="btn btn-sm btn-secondary">编辑</a>
                 <a href="{{ url_for('admin_video_delete', video_id=video.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('确定删除？')">删除</a>
             </td>
         </tr>
