@@ -12,9 +12,9 @@
             您的浏览器不支持视频播放
         </video>
 
-        <!-- 试看结束弹窗 -->
-        <div id="trialModal" class="modal-overlay" style="display:none;">
-            <div class="modal-content">
+        <!-- 试看结束弹窗（z-index极大值，确保不被视频覆盖） -->
+        <div id="trialModal" class="modal-overlay" style="display:none;z-index:2147483647;">
+            <div class="modal-content" style="position:relative;z-index:2147483648;">
                 <div class="modal-icon">🔒</div>
                 <h2>试看结束</h2>
                 <p>免费试看 {{ trial }} 秒已结束</p>
@@ -115,6 +115,19 @@
 }
 </style>
 
+<style>
+/* 弹窗强制最高层级，防止被视频和播放器控件覆盖 */
+.modal-overlay {
+    z-index: 2147483647 !important;
+    position: fixed !important;
+    background: rgba(0,0,0,0.85) !important;
+}
+.modal-overlay .modal-content {
+    position: relative !important;
+    z-index: 2147483648 !important;
+}
+</style>
+
 <script>
 const videoPlayer = document.getElementById('videoPlayer');
 const trialModal = document.getElementById('trialModal');
@@ -162,10 +175,25 @@ document.addEventListener('DOMContentLoaded', function() {
 if (!isVip && hasTrial) {
     videoPlayer.addEventListener('timeupdate', function() {
         if (this.currentTime >= trialSeconds && !trialTimer) {
+            trialTimer = true;
             this.pause();
-            trialTimer = setTimeout(() => {
-                showTrialModal();
-            }, 500);
+            // 退出全屏（如果有），然后立刻弹窗
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(()=>{});
+            }
+            // 立即弹窗，不延迟
+            showTrialModal();
+        }
+    });
+}
+
+// 手机端点击视频暂停时，如果试看结束也弹窗（兼容触摸事件）
+if (!isVip && hasTrial) {
+    videoPlayer.addEventListener('pause', function() {
+        if (trialTimer) return;
+        if (this.currentTime >= trialSeconds) {
+            trialTimer = true;
+            showTrialModal();
         }
     });
 }
